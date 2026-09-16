@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Single-plugin marketplace hosting claude-handoff",
-    "version": "1.0.0-alpha.2"
+    "version": "1.0.0-alpha.3"
   },
   "plugins": [
     {

@@ -68,7 +68,9 @@ After the new session starts, exit the old one (`/exit` or close the terminal).
 
 `/handoff:auto` reads `CLAUDE_CODE_ENTRYPOINT` and picks its target:
 
-- **`claude-desktop`** — opens a `claude://code/new?folder=…&q=…` deep link, giving you a new session in the Claude desktop app rooted at the same folder with the starting prompt already in the composer. It stages the session; press Enter to start it.
+- **`claude-desktop`** — opens a `claude://code/new?folder=…&q=…` deep link, giving you a new session in the Claude desktop app with the starting prompt already in the composer. It stages the session; press Enter to start it.
+
+  Caveat: the deep link cannot set the new session's working directory. The folder is attached to the composer (and shows in the UI), but the session starts in a scratch workspace under "No folder". The starting prompt therefore tells the new session to `change_directory` into the project and read the handoff document by absolute path, rather than relying on the SessionStart hook — which on this path looks under the scratch cwd and finds nothing.
 - **anything else** — the original terminal launch (`wt` on Windows, `tmux` on macOS/Linux).
 
 ## Requirements

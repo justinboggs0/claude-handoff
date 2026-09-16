@@ -306,16 +306,37 @@ a terminal session — use the terminal fallback further down.
 
 #### Desktop app (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`)
 
-Build a `claude://code/new` deep link with the cwd as `folder` and the short
-prompt as `q`. **Both values must be percent-encoded** — a Windows path
-contains `:` and `\`, and an unencoded space or `&` truncates the link. Do not
-add other query parameters. `q` is capped at 14336 characters, far above the
-short prompt.
+**Known limitation — the deep link cannot set the new session's working
+directory.** `folder=` attaches the folder to the composer as a *selected
+folder* (it shows in the UI, which makes this look like it worked), but the
+session still starts in a scratch workspace and is filed under "No folder".
+Verified against desktop app 2.110.0: a session launched this way reports a
+`.../scratch-workspaces/...` cwd, not the project path.
+
+Two consequences, both handled below:
+
+- The SessionStart hook will **not** find the handoff document — it derives
+  `<encoded_cwd>` from the scratch path, not the project path. The desktop
+  path therefore cannot rely on hook injection the way the terminal path does.
+- The prompt must be self-sufficient: it carries the project path and the
+  handoff document path explicitly, and tells the new session to relocate.
+
+**Desktop prompt** — different from the terminal `SHORT_PROMPT`; both paths
+absolute, both already computed in Step 2:
+
+```
+DESKTOP_PROMPT="Continue from a session handoff. First call change_directory with path <ABS_PROJECT_PATH>, then read <HANDOFF_PATH> and continue the work described there."
+```
+
+Build the link with the project path as `folder` and `DESKTOP_PROMPT` as `q`.
+**Both values must be percent-encoded** — a Windows path contains `:` and `\`,
+and an unencoded space or `&` truncates the link. Do not add other query
+parameters. `q` is capped at 14336 characters, far above this prompt.
 
 Windows (PowerShell):
 ```powershell
 $cwd = (Get-Location).Path
-$url = "claude://code/new?folder=$([uri]::EscapeDataString($cwd))&q=$([uri]::EscapeDataString($SHORT_PROMPT))"
+$url = "claude://code/new?folder=$([uri]::EscapeDataString($cwd))&q=$([uri]::EscapeDataString($DESKTOP_PROMPT))"
 Start-Process $url
 ```
 
@@ -324,18 +345,24 @@ macOS: `open "$URL"` — Linux: `xdg-open "$URL"`
 If only a Bash tool is available, encode with the Python the plugin already
 requires, then hand the URL to the platform opener:
 ```bash
-URL=$(python -c "import os,sys,urllib.parse as u; print('claude://code/new?folder='+u.quote(os.getcwd(),safe='')+'&q='+u.quote(sys.argv[1],safe=''))" "$SHORT_PROMPT")
+URL=$(python -c "import os,sys,urllib.parse as u; print('claude://code/new?folder='+u.quote(os.getcwd(),safe='')+'&q='+u.quote(sys.argv[1],safe=''))" "$DESKTOP_PROMPT")
 MSYS_NO_PATHCONV=1 cmd.exe /c start "" "$URL"   # Windows; use open/xdg-open elsewhere
 ```
+
+Passing `folder=` is still worth doing even though it does not set cwd: it
+surfaces the project in the new composer, so the `change_directory` approval
+the user sees names a folder they recognize.
 
 **This stages the session, it does not send.** The deep link opens a new Code
 composer rooted at the cwd with the short prompt already in the input box; the
 user presses Enter to start it, and no session exists until they do. Tell them
 that plainly rather than claiming the new session is running.
 
-Because the new session is rooted at the same cwd, the SessionStart hook
-resolves the same `<encoded_cwd>` memory path and injects the full handoff
-document on that first turn — same contract as the terminal path.
+The new session starts outside the project, so it reaches the handoff document
+by following the prompt — `change_directory` first, then read the absolute
+`<HANDOFF_PATH>`. Do not assume the SessionStart hook injected anything on
+this path; it did not. (The hook still does its job on the terminal path,
+where the new session inherits the project cwd.)
 
 #### Terminal fallback (`CLAUDE_CODE_ENTRYPOINT` is not `claude-desktop`)
 
