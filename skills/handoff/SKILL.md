@@ -1,12 +1,13 @@
 ---
 name: handoff
-description: Generate a structured handoff document and ready-to-paste starting prompt for the next session. Use `/handoff` for manual mode (output only). Use `/handoff:auto` to auto-launch the new session via `claude` CLI after the document is written.
+description: Generate a structured handoff document and ready-to-paste starting prompt for the next session. Use `/handoff` for manual mode (output only). Use `/handoff:auto` to launch the next session after the document is written — a new session in the Claude desktop app when running there, or a terminal `claude` session otherwise.
 argument-hint: "[:auto] [optional extra instructions for the next session]"
 user-invocable: true
 allowed-tools:
   - Read
   - Write
   - Bash
+  - PowerShell
   - Glob
   - Grep
 ---
@@ -296,6 +297,48 @@ SHORT_PROMPT="Continue from session handoff. The SessionStart hook injects the f
 Replace `<encoded_cwd>` using the same `encode_project_path()` logic from
 Step 2 (`:` `\` `/` → `-`, strip leading `-`).
 
+#### Launch target — decide this first
+
+Read `CLAUDE_CODE_ENTRYPOINT`. If it is `claude-desktop`, this handoff is
+running inside the Claude desktop app: open the continuation as a new desktop
+session via the `claude://` deep link. Any other value (`cli`, or unset) means
+a terminal session — use the terminal fallback further down.
+
+#### Desktop app (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`)
+
+Build a `claude://code/new` deep link with the cwd as `folder` and the short
+prompt as `q`. **Both values must be percent-encoded** — a Windows path
+contains `:` and `\`, and an unencoded space or `&` truncates the link. Do not
+add other query parameters. `q` is capped at 14336 characters, far above the
+short prompt.
+
+Windows (PowerShell):
+```powershell
+$cwd = (Get-Location).Path
+$url = "claude://code/new?folder=$([uri]::EscapeDataString($cwd))&q=$([uri]::EscapeDataString($SHORT_PROMPT))"
+Start-Process $url
+```
+
+macOS: `open "$URL"` — Linux: `xdg-open "$URL"`
+
+If only a Bash tool is available, encode with the Python the plugin already
+requires, then hand the URL to the platform opener:
+```bash
+URL=$(python -c "import os,sys,urllib.parse as u; print('claude://code/new?folder='+u.quote(os.getcwd(),safe='')+'&q='+u.quote(sys.argv[1],safe=''))" "$SHORT_PROMPT")
+MSYS_NO_PATHCONV=1 cmd.exe /c start "" "$URL"   # Windows; use open/xdg-open elsewhere
+```
+
+**This stages the session, it does not send.** The deep link opens a new Code
+composer rooted at the cwd with the short prompt already in the input box; the
+user presses Enter to start it, and no session exists until they do. Tell them
+that plainly rather than claiming the new session is running.
+
+Because the new session is rooted at the same cwd, the SessionStart hook
+resolves the same `<encoded_cwd>` memory path and injects the full handoff
+document on that first turn — same contract as the terminal path.
+
+#### Terminal fallback (`CLAUDE_CODE_ENTRYPOINT` is not `claude-desktop`)
+
 **Optional flag propagation**: if `CLAUDE_HANDOFF_AUTO_LAUNCH_FLAGS` is set
 in the user's environment (e.g. via `~/.claude/settings.json` env block),
 its contents are injected into the launch command between `claude` and the
@@ -334,9 +377,11 @@ SessionStart hook will inject the full handoff document as
 `additionalContext`, so the new session has everything — the short prompt
 is a bootstrap trigger, not the content carrier.
 
-After spawning the new process, do NOT continue producing output in the old
-session. The old session's job is done. Advise user to `/exit` (or close
-tab) once they confirm the new session is running.
+Once the continuation is launched (terminal) or staged (desktop), do NOT
+continue producing output in the old session — its job is done. Advise the
+user to `/exit` (or close the tab) once they have confirmed the new session is
+actually running: on the desktop path that means after they press Enter in the
+new composer, not merely after the deep link opens.
 
 ## Step 6: Post-Dispatch (manual mode only, optional)
 
@@ -358,8 +403,8 @@ the auto path from Step 5 (auto mode).
   a manual invocation.
 - Before terminating (auto mode) verify all pending work has completed.
   Nothing carries over automatically.
-- Manual mode MUST NOT spawn processes. Only `:auto` (or legacy `auto`) token
-  triggers the `claude` CLI launch.
+- Manual mode MUST NOT spawn processes or open `claude://` deep links. Only
+  the `:auto` (or legacy `auto`) token triggers a launch, terminal or desktop.
 - The legacy `$AGENTKB_DIR/scripts/handoff-orchestrator.py` path is
   DEPRECATED. Do not invoke it. The `claude-handoff` plugin is the
   canonical session-continuity module

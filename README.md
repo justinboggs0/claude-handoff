@@ -60,15 +60,23 @@ The skill will:
 1. Build a handoff document from conversation context, memory, and project docs
 2. Write it to `~/.claude/projects/<encoded-cwd>/memory/session-handoff.md`
 3. Print the Starting Prompt in the chat so you can paste it manually if preferred
-4. Ask whether to launch a new terminal tab automatically
+4. Ask whether to launch the next session automatically
 
 After the new session starts, exit the old one (`/exit` or close the terminal).
+
+### Where the new session opens
+
+`/handoff:auto` reads `CLAUDE_CODE_ENTRYPOINT` and picks its target:
+
+- **`claude-desktop`** — opens a `claude://code/new?folder=…&q=…` deep link, giving you a new session in the Claude desktop app rooted at the same folder with the starting prompt already in the composer. It stages the session; press Enter to start it.
+- **anything else** — the original terminal launch (`wt` on Windows, `tmux` on macOS/Linux).
 
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
 - Python 3.8+ (stdlib only; no pip installs required)
-- Windows Terminal (`wt`) for auto-launch on Windows, or any terminal that can background `claude` on macOS/Linux
+- For auto-launch from the Claude desktop app: nothing extra — the app registers the `claude://` URL scheme itself
+- For auto-launch from a terminal session: Windows Terminal (`wt`) on Windows, or any terminal that can background `claude` on macOS/Linux
 
 ## How It Works
 
